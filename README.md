@@ -1,6 +1,6 @@
 # Custom Graph
 
-Inspired and forked based on custom-node-size.
+Inspired and forked based on [jackvonhouse/custom-node-size](https://github.com/jackvonhouse/custom-node-size).
 
 # Features
 
