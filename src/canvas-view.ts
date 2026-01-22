@@ -145,8 +145,7 @@ export class CustomCanvasView extends ItemView {
 		this.centerXInput.addEventListener('change', () => this.updateCenterFromInputs());
 		this.centerYInput.addEventListener('change', () => this.updateCenterFromInputs());
 
-		// Update initial values
-		this.updateInputsFromState();
+		// Initial values will be set after canvas is initialized in onOpen()
 	}
 
 	private resizeCanvas(): void {
@@ -237,12 +236,18 @@ export class CustomCanvasView extends ItemView {
 	}
 
 	private getCenterWorldCoordinate(): { x: number; y: number } {
+		if (!this.canvas || !this.canvas.width || !this.canvas.height) {
+			return { x: 0, y: 0 };
+		}
 		const width = this.canvas.width / window.devicePixelRatio;
 		const height = this.canvas.height / window.devicePixelRatio;
 		return this.screenToWorld(width / 2, height / 2);
 	}
 
 	private setCenterWorldCoordinate(worldX: number, worldY: number): void {
+		if (!this.canvas || !this.canvas.width || !this.canvas.height) {
+			return;
+		}
 		const width = this.canvas.width / window.devicePixelRatio;
 		const height = this.canvas.height / window.devicePixelRatio;
 		const centerScreenX = width / 2;
@@ -291,7 +296,9 @@ export class CustomCanvasView extends ItemView {
 	}
 
 	private updateInputsFromState(): void {
-		if (this.isUpdatingFromInputs || !this.zoomInput) return;
+		if (this.isUpdatingFromInputs || !this.zoomInput || !this.canvas || !this.canvas.width || !this.canvas.height) {
+			return;
+		}
 		
 		this.isUpdatingFromInputs = true;
 		

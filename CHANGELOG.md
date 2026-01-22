@@ -1,6 +1,34 @@
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-01-22
+
+### Added
+
+- **Zoom and Center Input Controls**: Added input boxes for adjusting zoom level and center coordinates
+  - Zoom input field (range: 0.1 to 5.0) for precise zoom control
+  - Center X and Center Y input fields for setting the world coordinate at the center of the canvas
+  - Controls panel displayed at the top of the canvas view
+  - Real-time synchronization between input values and canvas state
+  - Inputs automatically update when zooming/panning with mouse actions
+
+### Changed
+
+- Canvas view now includes a controls panel above the canvas for manual input adjustments
+- Zoom and pan operations now update the input fields to reflect current state
+
+### Fixed
+
+- Fixed initialization error where inputs were accessed before canvas was ready
+- Added safety checks to prevent errors when canvas dimensions are not yet available
+
+### Technical Details
+
+- Controls panel uses flexbox layout with Obsidian theme integration
+- Input validation ensures zoom stays within bounds (0.1-5.0)
+- Center coordinate calculation converts between screen and world coordinates
+- Bidirectional sync prevents infinite update loops using `isUpdatingFromInputs` flag
+
 ## [1.0.0] - 2026-01-22
 
 ### Added
