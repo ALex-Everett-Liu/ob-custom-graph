@@ -25,3 +25,8 @@ export interface ObsidianForce {
 export interface ObsidianView {
 	renderer: ObsidianRenderer;
 }
+
+export interface CanvasEdge {
+	source: string; // source node path
+	target: string; // target node path
+}

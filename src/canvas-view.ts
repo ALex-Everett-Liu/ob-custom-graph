@@ -1,5 +1,6 @@
 import { ItemView, WorkspaceLeaf, TFile, Plugin } from 'obsidian';
 import { CustomNodeSizeSettings, CustomNodeSize } from 'src/main';
+import { CanvasEdge } from 'src/types';
 
 export interface CanvasNode {
 	id: string;
@@ -14,7 +15,10 @@ export class CustomCanvasView extends ItemView {
 	private canvas: HTMLCanvasElement;
 	private ctx: CanvasRenderingContext2D;
 	private nodes: Map<string, CanvasNode> = new Map();
+	private edges: Map<string, CanvasEdge> = new Map(); // key: "source|target"
 	private selectedNode: CanvasNode | null = null;
+	private edgeSourceNode: CanvasNode | null = null; // node selected for creating edge
+	private hoveredEdge: CanvasEdge | null = null;
 	private isDragging: boolean = false;
 	private dragOffset: { x: number; y: number } = { x: 0, y: 0 };
 	private panOffset: { x: number; y: number } = { x: 0, y: 0 };
@@ -254,6 +258,7 @@ export class CustomCanvasView extends ItemView {
 
 	private loadNodes(): void {
 		this.nodes.clear();
+		this.edges.clear();
 		
 		// Get fresh settings
 		const settings = this.getSettings();
@@ -292,6 +297,32 @@ export class CustomCanvasView extends ItemView {
 					label: file.basename
 				};
 				this.nodes.set(file.path, node);
+
+				// Load edges from frontmatter
+				const edges = cache.frontmatter.edges;
+				if (Array.isArray(edges)) {
+					for (const targetPath of edges) {
+						if (typeof targetPath === 'string' && targetPath !== file.path) {
+							// Normalize path (remove .md extension if present, or add it)
+							let normalizedTarget = targetPath;
+							if (!normalizedTarget.endsWith('.md')) {
+								normalizedTarget = normalizedTarget + '.md';
+							}
+							
+							// Check if target file exists
+							const targetFile = this.app.vault.getAbstractFileByPath(normalizedTarget);
+							if (targetFile) {
+								const edgeKey = this.getEdgeKey(file.path, normalizedTarget);
+								if (!this.edges.has(edgeKey)) {
+									this.edges.set(edgeKey, {
+										source: file.path,
+										target: normalizedTarget
+									});
+								}
+							}
+						}
+					}
+				}
 			}
 		}
 	}
@@ -320,9 +351,10 @@ export class CustomCanvasView extends ItemView {
 		this.canvas.addEventListener('mousedown', this.onMouseDown.bind(this));
 		this.canvas.addEventListener('mousemove', this.onMouseMove.bind(this));
 		this.canvas.addEventListener('mouseup', this.onMouseUp.bind(this));
-		this.canvas.addEventListener('mouseleave', this.onMouseUp.bind(this));
+		this.canvas.addEventListener('mouseleave', this.onMouseLeave.bind(this));
 		this.canvas.addEventListener('dblclick', this.onDoubleClick.bind(this));
 		this.canvas.addEventListener('wheel', this.onWheel.bind(this));
+		this.canvas.addEventListener('contextmenu', (e) => e.preventDefault()); // Prevent right-click menu
 
 		// Touch events for mobile
 		this.canvas.addEventListener('touchstart', this.onTouchStart.bind(this));
@@ -334,6 +366,15 @@ export class CustomCanvasView extends ItemView {
 			this.resizeCanvas();
 			this.updateInputsFromState();
 			this.render();
+		});
+
+		// Keyboard events
+		window.addEventListener('keydown', (e) => {
+			if (e.key === 'Escape' && this.edgeSourceNode) {
+				this.edgeSourceNode = null;
+				this.canvas.style.cursor = 'grab';
+				this.render();
+			}
 		});
 	}
 
@@ -462,9 +503,76 @@ export class CustomCanvasView extends ItemView {
 		return null;
 	}
 
+	private getEdgeAt(x: number, y: number): CanvasEdge | null {
+		const threshold = 5; // pixels
+		let closestEdge: CanvasEdge | null = null;
+		let closestDistance = Infinity;
+
+		for (const edge of this.edges.values()) {
+			const sourceNode = this.nodes.get(edge.source);
+			const targetNode = this.nodes.get(edge.target);
+			
+			if (!sourceNode || !targetNode) continue;
+
+			const start = this.worldToScreen(sourceNode.x, sourceNode.y);
+			const end = this.worldToScreen(targetNode.x, targetNode.y);
+
+			// Calculate distance from point to line segment
+			const A = x - start.x;
+			const B = y - start.y;
+			const C = end.x - start.x;
+			const D = end.y - start.y;
+
+			const dot = A * C + B * D;
+			const lenSq = C * C + D * D;
+			let param = -1;
+			if (lenSq !== 0) param = dot / lenSq;
+
+			let xx, yy;
+			if (param < 0) {
+				xx = start.x;
+				yy = start.y;
+			} else if (param > 1) {
+				xx = end.x;
+				yy = end.y;
+			} else {
+				xx = start.x + param * C;
+				yy = start.y + param * D;
+			}
+
+			const dx = x - xx;
+			const dy = y - yy;
+			const distance = Math.sqrt(dx * dx + dy * dy);
+
+			if (distance < threshold && distance < closestDistance) {
+				closestDistance = distance;
+				closestEdge = edge;
+			}
+		}
+
+		return closestEdge;
+	}
+
 	private onMouseDown(e: MouseEvent): void {
 		const pos = this.getMousePos(e);
 		const node = this.getNodeAt(pos.x, pos.y);
+		const edge = this.getEdgeAt(pos.x, pos.y);
+
+		// Right-click or Shift+click on edge to delete
+		if ((e.button === 2 || e.shiftKey) && edge) {
+			e.preventDefault();
+			this.deleteEdge(edge);
+			return;
+		}
+
+		// Shift+click on node to start edge creation
+		if (e.shiftKey && node) {
+			e.preventDefault();
+			this.edgeSourceNode = node;
+			this.canvas.style.cursor = 'crosshair';
+			this.render();
+			return;
+		}
 
 		if (node) {
 			// Start dragging node
@@ -486,6 +594,33 @@ export class CustomCanvasView extends ItemView {
 
 	private onMouseMove(e: MouseEvent): void {
 		const pos = this.getMousePos(e);
+		this.lastPanPoint = pos; // Store for edge preview
+
+		// Update cursor and hovered edge
+		if (this.edgeSourceNode) {
+			const node = this.getNodeAt(pos.x, pos.y);
+			this.canvas.style.cursor = node && node !== this.edgeSourceNode ? 'pointer' : 'crosshair';
+		} else if (e.shiftKey) {
+			const edge = this.getEdgeAt(pos.x, pos.y);
+			this.canvas.style.cursor = edge ? 'not-allowed' : 'crosshair';
+		} else {
+			const edge = this.getEdgeAt(pos.x, pos.y);
+			const node = this.getNodeAt(pos.x, pos.y);
+			if (edge) {
+				this.canvas.style.cursor = 'pointer';
+			} else if (node) {
+				this.canvas.style.cursor = 'grab';
+			} else {
+				this.canvas.style.cursor = 'grab';
+			}
+		}
+
+		// Update hovered edge
+		const edge = this.getEdgeAt(pos.x, pos.y);
+		if (edge !== this.hoveredEdge) {
+			this.hoveredEdge = edge;
+			this.render();
+		}
 
 		if (this.isDragging && this.selectedNode) {
 			const worldPos = this.screenToWorld(
@@ -503,10 +638,26 @@ export class CustomCanvasView extends ItemView {
 			this.lastPanPoint = pos;
 			this.updateInputsFromState();
 			this.render();
+		} else if (this.edgeSourceNode) {
+			// Update edge preview
+			this.render();
 		}
 	}
 
 	private onMouseUp(e: MouseEvent): void {
+		const pos = this.getMousePos(e);
+
+		if (this.edgeSourceNode) {
+			// Complete edge creation
+			const targetNode = this.getNodeAt(pos.x, pos.y);
+			if (targetNode && targetNode !== this.edgeSourceNode) {
+				this.createEdge(this.edgeSourceNode, targetNode);
+			}
+			this.edgeSourceNode = null;
+			this.canvas.style.cursor = 'grab';
+			this.render();
+		}
+
 		if (this.isDragging && this.selectedNode) {
 			// Save position to frontmatter
 			this.saveNodePosition(this.selectedNode);
@@ -518,7 +669,9 @@ export class CustomCanvasView extends ItemView {
 			this.isPanning = false;
 		}
 		
-		this.canvas.style.cursor = 'grab';
+		if (!this.edgeSourceNode) {
+			this.canvas.style.cursor = 'grab';
+		}
 	}
 
 	private onDoubleClick(e: MouseEvent): void {
@@ -596,6 +749,16 @@ export class CustomCanvasView extends ItemView {
 		}
 	}
 
+	private onMouseLeave(e: MouseEvent): void {
+		// Cancel edge creation if mouse leaves canvas
+		if (this.edgeSourceNode) {
+			this.edgeSourceNode = null;
+			this.canvas.style.cursor = 'grab';
+			this.render();
+		}
+		this.onMouseUp(e);
+	}
+
 	private onTouchEnd(e: TouchEvent): void {
 		if (this.isDragging && this.selectedNode) {
 			this.saveNodePosition(this.selectedNode);
@@ -605,6 +768,102 @@ export class CustomCanvasView extends ItemView {
 		
 		if (this.isPanning) {
 			this.isPanning = false;
+		}
+	}
+
+	private createEdge(source: CanvasNode, target: CanvasNode): void {
+		const edgeKey = this.getEdgeKey(source.path, target.path);
+		
+		// Check if edge already exists
+		if (this.edges.has(edgeKey)) {
+			return;
+		}
+
+		const edge: CanvasEdge = {
+			source: source.path,
+			target: target.path
+		};
+
+		this.edges.set(edgeKey, edge);
+		
+		// Save edges to source node's frontmatter
+		this.saveEdgesToFrontmatter(source.path);
+		
+		this.render();
+	}
+
+	private deleteEdge(edge: CanvasEdge): void {
+		const edgeKey = this.getEdgeKey(edge.source, edge.target);
+		this.edges.delete(edgeKey);
+		
+		// Update frontmatter for source node only (edges are stored on source)
+		this.saveEdgesToFrontmatter(edge.source);
+		
+		this.render();
+	}
+
+	private getEdgesForNode(nodePath: string): string[] {
+		// Only return edges where this node is the source
+		const targetPaths: string[] = [];
+		for (const edge of this.edges.values()) {
+			if (edge.source === nodePath) {
+				targetPaths.push(edge.target);
+			}
+		}
+		return targetPaths;
+	}
+
+	private async saveEdgesToFrontmatter(nodePath: string): Promise<void> {
+		const file = this.app.vault.getAbstractFileByPath(nodePath) as TFile;
+		if (!file) return;
+
+		try {
+			let content = await this.app.vault.read(file);
+			const frontmatterRegex = /^---\s*\n([\s\S]*?)\n---\s*\n/;
+			const match = content.match(frontmatterRegex);
+
+			const edges = this.getEdgesForNode(nodePath);
+
+			if (match) {
+				// Update existing frontmatter
+				let frontmatter = match[1];
+				
+				// Update or add edges
+				if (edges.length > 0) {
+					const edgesYaml = edges.length === 1 
+						? `edges: ["${edges[0]}"]`
+						: `edges:\n${edges.map(e => `  - "${e}"`).join('\n')}`;
+					
+					if (frontmatter.match(/^edges\s*:/m)) {
+						// Replace existing edges array (handle both inline and multiline formats)
+						// Match: edges: ... followed by optional multiline items
+						frontmatter = frontmatter.replace(/^edges\s*:.*?(?=\n\w|\n---|$)/ms, edgesYaml);
+					} else {
+						frontmatter += `\n${edgesYaml}`;
+					}
+				} else {
+					// Remove edges property if empty
+					if (frontmatter.match(/^edges\s*:/m)) {
+						// Remove edges line and any following array items
+						frontmatter = frontmatter.replace(/^edges\s*:.*?(?=\n\w|\n---|$)/ms, '');
+					}
+				}
+
+				content = content.replace(frontmatterRegex, `---\n${frontmatter}\n---\n`);
+			} else {
+				// Add new frontmatter with edges if any
+				if (edges.length > 0) {
+					const edgesYaml = edges.length === 1 
+						? `edges: ["${edges[0]}"]`
+						: `edges:\n${edges.map(e => `  - "${e}"`).join('\n')}`;
+					const frontmatter = `---\n${edgesYaml}\n---\n\n`;
+					content = frontmatter + content;
+				}
+			}
+
+			await this.app.vault.modify(file, content);
+		} catch (error) {
+			console.error('Error saving edges:', error);
 		}
 	}
 
@@ -696,35 +955,56 @@ export class CustomCanvasView extends ItemView {
 		}
 	}
 
+	private getEdgeKey(source: string, target: string): string {
+		// Use consistent ordering to avoid duplicate edges
+		return source < target ? `${source}|${target}` : `${target}|${source}`;
+	}
+
 	private drawLinks(): void {
-		const nodesArray = Array.from(this.nodes.values());
-		
+		// Draw edges from frontmatter
 		this.ctx.strokeStyle = 'rgba(150, 150, 150, 0.3)';
 		this.ctx.lineWidth = 1;
 
-		for (const node of nodesArray) {
-			const file = this.app.vault.getAbstractFileByPath(node.path) as TFile;
-			if (!file) continue;
+		for (const edge of this.edges.values()) {
+			const sourceNode = this.nodes.get(edge.source);
+			const targetNode = this.nodes.get(edge.target);
+			
+			if (!sourceNode || !targetNode) continue;
 
-			const cache = this.app.metadataCache.getFileCache(file);
-			if (!cache) continue;
-
-			// Draw links to referenced files
-			if (cache.links) {
-				for (const link of cache.links) {
-					const targetPath = this.app.metadataCache.getFirstLinkpathDest(link.link, file.path)?.path;
-					if (targetPath && this.nodes.has(targetPath)) {
-						const targetNode = this.nodes.get(targetPath)!;
-						const start = this.worldToScreen(node.x, node.y);
-						const end = this.worldToScreen(targetNode.x, targetNode.y);
-						
-						this.ctx.beginPath();
-						this.ctx.moveTo(start.x, start.y);
-						this.ctx.lineTo(end.x, end.y);
-						this.ctx.stroke();
-					}
-				}
+			const isHovered = this.hoveredEdge === edge;
+			
+			if (isHovered) {
+				this.ctx.strokeStyle = 'rgba(255, 100, 100, 0.6)';
+				this.ctx.lineWidth = 2;
+			} else {
+				this.ctx.strokeStyle = 'rgba(150, 150, 150, 0.3)';
+				this.ctx.lineWidth = 1;
 			}
+
+			const start = this.worldToScreen(sourceNode.x, sourceNode.y);
+			const end = this.worldToScreen(targetNode.x, targetNode.y);
+			
+			this.ctx.beginPath();
+			this.ctx.moveTo(start.x, start.y);
+			this.ctx.lineTo(end.x, end.y);
+			this.ctx.stroke();
+		}
+
+		// Draw preview edge when creating new edge
+		if (this.edgeSourceNode) {
+			const start = this.worldToScreen(this.edgeSourceNode.x, this.edgeSourceNode.y);
+			this.ctx.strokeStyle = 'rgba(100, 150, 255, 0.5)';
+			this.ctx.lineWidth = 2;
+			this.ctx.setLineDash([5, 5]);
+			this.ctx.beginPath();
+			this.ctx.moveTo(start.x, start.y);
+			// Get current mouse position from canvas
+			const rect = this.canvas.getBoundingClientRect();
+			const mouseX = this.lastPanPoint.x;
+			const mouseY = this.lastPanPoint.y;
+			this.ctx.lineTo(mouseX, mouseY);
+			this.ctx.stroke();
+			this.ctx.setLineDash([]);
 		}
 	}
 
