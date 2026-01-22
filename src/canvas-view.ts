@@ -31,10 +31,8 @@ export class CustomCanvasView extends ItemView {
 
 	constructor(leaf: WorkspaceLeaf, settings: CustomNodeSizeSettings, plugin: CustomNodeSize) {
 		super(leaf);
-		console.log('[CustomCanvasView] Constructor called with settings:', settings, 'plugin:', plugin ? 'OK' : 'NULL');
 		this.plugin = plugin;
 		this.settings = settings || { loadOnlyCurrentDirectory: false };
-		console.log('[CustomCanvasView] Constructor complete, settings stored:', this.settings);
 	}
 
 	private getSettings(): CustomNodeSizeSettings {
@@ -47,7 +45,6 @@ export class CustomCanvasView extends ItemView {
 	}
 
 	updateSettings(settings: CustomNodeSizeSettings): void {
-		console.log('[CustomCanvasView] updateSettings() called, new settings:', settings);
 		this.settings = settings;
 		// Reload nodes with new settings
 		this.loadNodes();
@@ -67,14 +64,12 @@ export class CustomCanvasView extends ItemView {
 	}
 
 	async onOpen(): Promise<void> {
-		console.log('[CustomCanvasView] onOpen() called');
-		
 		// Ensure we have fresh settings from plugin
 		if (this.plugin?.settings) {
 			this.settings = this.plugin.settings;
-			console.log('[CustomCanvasView] Updated settings from plugin:', this.settings);
-		} else {
-			console.warn('[CustomCanvasView] WARNING: Plugin not available, using stored settings:', this.settings);
+		} else if (!this.settings) {
+			console.warn('[CustomCanvasView] Plugin not available, using default settings');
+			this.settings = { loadOnlyCurrentDirectory: false };
 		}
 		
 		const container = this.contentEl;
@@ -83,7 +78,6 @@ export class CustomCanvasView extends ItemView {
 
 		// Create controls panel
 		this.createControlsPanel(container);
-		console.log('[CustomCanvasView] Controls panel created');
 
 		// Create canvas wrapper
 		const canvasWrapper = container.createDiv('canvas-wrapper');
@@ -98,20 +92,19 @@ export class CustomCanvasView extends ItemView {
 		this.canvas.style.height = '100%';
 
 		this.ctx = this.canvas.getContext('2d')!;
-		console.log('[CustomCanvasView] Canvas created, context:', this.ctx ? 'OK' : 'FAILED');
+		if (!this.ctx) {
+			console.error('[CustomCanvasView] Failed to get canvas context');
+			return;
+		}
 		
 		// Set canvas size
 		this.resizeCanvas();
-		console.log('[CustomCanvasView] Canvas resized, size:', this.canvas.width, 'x', this.canvas.height);
 
 		// Load nodes from metadata
-		console.log('[CustomCanvasView] About to load nodes, settings:', this.settings);
 		this.loadNodes();
-		console.log('[CustomCanvasView] Nodes loaded, count:', this.nodes.size);
 
 		// Setup event listeners
 		this.setupEventListeners();
-		console.log('[CustomCanvasView] Event listeners setup');
 
 		// Listen for metadata changes
 		this.registerEvent(
@@ -146,16 +139,13 @@ export class CustomCanvasView extends ItemView {
 			requestAnimationFrame(() => {
 				// Double RAF ensures layout is complete
 				this.resizeCanvas();
-				console.log('[CustomCanvasView] Canvas resized after layout, size:', this.canvas.width, 'x', this.canvas.height);
 				
 				// Only render if canvas has valid size
 				if (this.canvas.width > 0 && this.canvas.height > 0) {
-					console.log('[CustomCanvasView] About to render, node count:', this.nodes.size);
 					this.render();
-					console.log('[CustomCanvasView] Initial render complete');
 					this.updateInputsFromState();
 				} else {
-					console.error('[CustomCanvasView] Canvas still has zero size after layout, cannot render');
+					console.error('[CustomCanvasView] Canvas has zero size, retrying...');
 					// Try one more time after a short delay
 					setTimeout(() => {
 						this.resizeCanvas();
@@ -169,8 +159,6 @@ export class CustomCanvasView extends ItemView {
 				}
 			});
 		});
-		
-		console.log('[CustomCanvasView] onOpen() complete (render scheduled)');
 	}
 
 	async onClose(): Promise<void> {
@@ -233,15 +221,12 @@ export class CustomCanvasView extends ItemView {
 			return;
 		}
 		const rect = this.canvas.getBoundingClientRect();
-		console.log('[CustomCanvasView] resizeCanvas() - bounding rect:', rect.width, 'x', rect.height);
 		
 		// If canvas has zero size, try to get size from container or use defaults
 		if (rect.width === 0 || rect.height === 0) {
-			console.warn('[CustomCanvasView] Canvas has zero size, checking container');
 			const container = this.canvas.parentElement;
 			if (container) {
 				const containerRect = container.getBoundingClientRect();
-				console.log('[CustomCanvasView] Container size:', containerRect.width, 'x', containerRect.height);
 				if (containerRect.width > 0 && containerRect.height > 0) {
 					this.canvas.width = containerRect.width * window.devicePixelRatio;
 					this.canvas.height = containerRect.height * window.devicePixelRatio;
@@ -249,13 +234,11 @@ export class CustomCanvasView extends ItemView {
 					// Use viewport size as fallback
 					const viewportWidth = window.innerWidth || 800;
 					const viewportHeight = window.innerHeight || 600;
-					console.log('[CustomCanvasView] Using viewport size as fallback:', viewportWidth, 'x', viewportHeight);
 					this.canvas.width = viewportWidth * window.devicePixelRatio;
 					this.canvas.height = viewportHeight * window.devicePixelRatio;
 				}
 			} else {
 				// Fallback to default size
-				console.warn('[CustomCanvasView] No container found, using default size');
 				this.canvas.width = 800 * window.devicePixelRatio;
 				this.canvas.height = 600 * window.devicePixelRatio;
 			}
@@ -267,50 +250,32 @@ export class CustomCanvasView extends ItemView {
 		// Reset context scale and reapply
 		this.ctx.setTransform(1, 0, 0, 1, 0, 0);
 		this.ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-		console.log('[CustomCanvasView] Canvas internal size set to:', this.canvas.width, 'x', this.canvas.height);
 	}
 
 	private loadNodes(): void {
-		console.log('[CustomCanvasView] loadNodes() called');
 		this.nodes.clear();
 		
 		// Get fresh settings
 		const settings = this.getSettings();
-		console.log('[CustomCanvasView] Using settings:', settings);
 		
 		let files = this.app.vault.getMarkdownFiles();
-		console.log('[CustomCanvasView] Total markdown files in vault:', files.length);
 		
 		// Filter by current directory if setting is enabled
 		if (settings.loadOnlyCurrentDirectory) {
-			console.log('[CustomCanvasView] Directory filtering enabled');
 			const currentDirectory = this.getCurrentDirectory();
-			console.log('[CustomCanvasView] Current directory:', currentDirectory);
 			if (currentDirectory) {
-				const beforeCount = files.length;
 				files = files.filter(file => {
 					const fileDir = file.parent?.path || '';
-					const matches = fileDir === currentDirectory || fileDir.startsWith(currentDirectory + '/');
-					return matches;
+					return fileDir === currentDirectory || fileDir.startsWith(currentDirectory + '/');
 				});
-				console.log('[CustomCanvasView] Filtered files:', files.length, 'out of', beforeCount);
 			} else {
-				console.log('[CustomCanvasView] WARNING: No current directory found, loading all files');
+				console.warn('[CustomCanvasView] No current directory found, loading all files');
 			}
-		} else {
-			console.log('[CustomCanvasView] Directory filtering disabled, loading all files');
 		}
-		
-		let nodesWithCoords = 0;
-		let nodesWithoutCoords = 0;
-		let nodesWithoutFrontmatter = 0;
 		
 		for (const file of files) {
 			const cache = this.app.metadataCache.getFileCache(file);
-			if (!cache?.frontmatter) {
-				nodesWithoutFrontmatter++;
-				continue;
-			}
+			if (!cache?.frontmatter) continue;
 
 			const nodeX = cache.frontmatter.node_x;
 			const nodeY = cache.frontmatter.node_y;
@@ -327,46 +292,26 @@ export class CustomCanvasView extends ItemView {
 					label: file.basename
 				};
 				this.nodes.set(file.path, node);
-				nodesWithCoords++;
-			} else {
-				nodesWithoutCoords++;
 			}
 		}
-		
-		console.log('[CustomCanvasView] loadNodes() complete:', {
-			totalFiles: files.length,
-			nodesWithCoords,
-			nodesWithoutCoords,
-			nodesWithoutFrontmatter,
-			totalNodesLoaded: this.nodes.size
-		});
 	}
 
 	private getCurrentDirectory(): string | null {
-		console.log('[CustomCanvasView] getCurrentDirectory() called');
 		// Get the active file from the workspace
 		const activeFile = this.app.workspace.getActiveFile();
-		console.log('[CustomCanvasView] Active file:', activeFile?.path || 'none');
 		if (activeFile && activeFile.parent) {
-			const dir = activeFile.parent.path;
-			console.log('[CustomCanvasView] Using active file directory:', dir);
-			return dir;
+			return activeFile.parent.path;
 		}
 		// If no active file, try to get directory from any open markdown file
 		const leaves = this.app.workspace.getLeavesOfType('markdown');
-		console.log('[CustomCanvasView] Open markdown leaves:', leaves.length);
 		if (leaves.length > 0) {
 			const view = leaves[0].view;
 			// @ts-ignore
 			const file = view?.file;
-			console.log('[CustomCanvasView] First markdown file:', file?.path || 'none');
 			if (file && file.parent) {
-				const dir = file.parent.path;
-				console.log('[CustomCanvasView] Using first markdown file directory:', dir);
-				return dir;
+				return file.parent.path;
 			}
 		}
-		console.log('[CustomCanvasView] No directory found, returning null');
 		return null;
 	}
 
@@ -705,11 +650,8 @@ export class CustomCanvasView extends ItemView {
 
 	private render(): void {
 		if (!this.ctx) {
-			console.log('[CustomCanvasView] render() called but ctx is null');
 			return;
 		}
-
-		console.log('[CustomCanvasView] render() called, nodes:', this.nodes.size, 'canvas size:', this.canvas.width, 'x', this.canvas.height);
 
 		// Clear canvas
 		this.ctx.clearRect(0, 0, this.canvas.width / window.devicePixelRatio, this.canvas.height / window.devicePixelRatio);
@@ -721,12 +663,9 @@ export class CustomCanvasView extends ItemView {
 		this.drawLinks();
 
 		// Draw nodes
-		let nodesDrawn = 0;
 		for (const node of this.nodes.values()) {
 			this.drawNode(node);
-			nodesDrawn++;
 		}
-		console.log('[CustomCanvasView] render() complete, nodes drawn:', nodesDrawn);
 	}
 
 	private drawGrid(): void {
