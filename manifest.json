@@ -1,7 +1,7 @@
 {
 	"id": "custom-node-size",
 	"name": "Custom Node Size",
-	"version": "1.0.0",
+	"version": "1.0.2",
 	"minAppVersion": "1.6.7",
 	"description": "Customize nodes size for improved graph understanding.",
 	"author": "jackvonhouse",

@@ -89,11 +89,12 @@ export class CustomCanvasView extends ItemView {
 		// Create canvas
 		this.canvas = canvasWrapper.createEl('canvas', {
 			attr: {
-				style: 'width: 100%; height: 100%; display: block; cursor: grab;'
+				style: 'width: 100%; height: 100%; display: block; cursor: grab; pointer-events: auto;'
 			}
 		});
 		this.canvas.style.width = '100%';
 		this.canvas.style.height = '100%';
+		this.canvas.style.pointerEvents = 'auto';
 
 		this.ctx = this.canvas.getContext('2d')!;
 		if (!this.ctx) {
@@ -353,8 +354,15 @@ export class CustomCanvasView extends ItemView {
 		this.canvas.addEventListener('mouseup', this.onMouseUp.bind(this));
 		this.canvas.addEventListener('mouseleave', this.onMouseLeave.bind(this));
 		this.canvas.addEventListener('dblclick', this.onDoubleClick.bind(this));
-		this.canvas.addEventListener('wheel', this.onWheel.bind(this));
-		this.canvas.addEventListener('contextmenu', (e) => e.preventDefault()); // Prevent right-click menu
+		this.canvas.addEventListener('wheel', this.onWheel.bind(this), { passive: false });
+		this.canvas.addEventListener('contextmenu', (e) => {
+			// Only prevent default for right-clicks on edges, allow normal context menu otherwise
+			const pos = this.getMousePos(e);
+			const edge = this.getEdgeAt(pos.x, pos.y);
+			if (edge) {
+				e.preventDefault();
+			}
+		});
 
 		// Touch events for mobile
 		this.canvas.addEventListener('touchstart', this.onTouchStart.bind(this));
@@ -558,8 +566,15 @@ export class CustomCanvasView extends ItemView {
 		const node = this.getNodeAt(pos.x, pos.y);
 		const edge = this.getEdgeAt(pos.x, pos.y);
 
-		// Right-click or Shift+click on edge to delete
-		if ((e.button === 2 || e.shiftKey) && edge) {
+		// Right-click on edge to delete (only if not clicking on a node)
+		if (e.button === 2 && edge && !node) {
+			e.preventDefault();
+			this.deleteEdge(edge);
+			return;
+		}
+
+		// Shift+click on edge to delete (only if not clicking on a node)
+		if (e.shiftKey && edge && !node) {
 			e.preventDefault();
 			this.deleteEdge(edge);
 			return;
@@ -594,7 +609,6 @@ export class CustomCanvasView extends ItemView {
 
 	private onMouseMove(e: MouseEvent): void {
 		const pos = this.getMousePos(e);
-		this.lastPanPoint = pos; // Store for edge preview
 
 		// Update cursor and hovered edge
 		if (this.edgeSourceNode) {
@@ -635,10 +649,12 @@ export class CustomCanvasView extends ItemView {
 			const deltaY = pos.y - this.lastPanPoint.y;
 			this.panOffset.x += deltaX / this.zoom;
 			this.panOffset.y += deltaY / this.zoom;
-			this.lastPanPoint = pos;
+			this.lastPanPoint = pos; // Update for next move
 			this.updateInputsFromState();
 			this.render();
 		} else if (this.edgeSourceNode) {
+			// Store position for edge preview
+			this.lastPanPoint = pos;
 			// Update edge preview
 			this.render();
 		}

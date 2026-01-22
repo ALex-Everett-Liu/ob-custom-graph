@@ -1,6 +1,6 @@
 {
 	"name": "custom-node-size",
-	"version": "1.0.0",
+	"version": "1.0.2",
 	"description": "Custom nodes size for improved graph understanding.",
 	"main": "main.js",
 	"scripts": {

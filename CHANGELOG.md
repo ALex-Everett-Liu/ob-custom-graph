@@ -1,6 +1,52 @@
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-01-22
+
+### Added
+
+- **Manual Edge Creation**: Users can now manually create edges between nodes on the canvas
+  - Shift+click on a node to start edge creation mode
+  - Click on another node to create the edge connection
+  - Visual preview line shows while creating an edge
+  - Press Escape to cancel edge creation
+- **Edge Deletion**: Users can delete edges directly from the canvas
+  - Right-click on an edge to delete it
+  - Shift+click on an edge also deletes it
+  - Hovered edges are highlighted in red for better visibility
+- **Edge Persistence in Frontmatter**: Edges are now stored in markdown frontmatter instead of being automatically detected from wikilinks
+  - Edges stored as YAML array in source node's frontmatter: `edges: ["path/to/target.md"]`
+  - Supports both inline and multiline YAML array formats
+  - Edges automatically removed from frontmatter when deleted
+  - Edge data persists across sessions and plugin reloads
+
+### Changed
+
+- **Edge Detection**: Canvas view now loads edges from frontmatter properties instead of automatically detecting wikilinks
+  - Edges must be manually created to appear on the canvas
+  - Provides full control over which connections are displayed
+- **Edge Storage**: Edges are stored on the source node's frontmatter (not bidirectional)
+  - Each edge stored once in the source node's `edges` array
+  - Edge deletion updates frontmatter automatically
+
+### Fixed
+
+- Fixed canvas dragging and node selection not working after edge feature implementation
+  - Edge deletion now only triggers when clicking on edges (not nodes)
+  - Panning calculation bug fixed (delta was always zero)
+  - Context menu prevention made selective (only for edges)
+  - Canvas pointer events explicitly enabled
+
+### Technical Details
+
+- Added `CanvasEdge` interface to types.ts for edge data structure
+- Edge storage uses consistent key format: `"source|target"` (sorted alphabetically)
+- Edge detection uses distance-to-line-segment calculation with 5px threshold
+- Frontmatter parsing handles both array and string formats for backward compatibility
+- Edge creation/deletion triggers automatic frontmatter updates
+- Visual feedback includes cursor changes and edge highlighting
+- Keyboard support: Escape key cancels edge creation mode
+
 ## [1.0.1] - 2026-01-22
 
 ### Added
