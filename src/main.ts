@@ -1,13 +1,25 @@
-import { Plugin, WorkspaceLeaf } from 'obsidian';
+import { App, Plugin, WorkspaceLeaf, PluginSettingTab, Setting } from 'obsidian';
 import { ObsidianView } from 'src/types';
 import { CustomCanvasView } from 'src/canvas-view';
 
+export interface CustomNodeSizeSettings {
+	loadOnlyCurrentDirectory: boolean;
+}
+
+const DEFAULT_SETTINGS: CustomNodeSizeSettings = {
+	loadOnlyCurrentDirectory: false
+};
+
 export default class CustomNodeSize extends Plugin {
+	settings: CustomNodeSizeSettings;
 	private updateInterval: number | null = null;
 
 	async onload() {
+		// Load settings
+		await this.loadSettings();
+
 		// Register custom canvas view
-		this.registerView('custom-node-canvas', (leaf: WorkspaceLeaf) => new CustomCanvasView(leaf));
+		this.registerView('custom-node-canvas', (leaf: WorkspaceLeaf) => new CustomCanvasView(leaf, this.settings));
 
 		// Add command to open custom canvas view
 		this.addCommand({
@@ -58,6 +70,25 @@ export default class CustomNodeSize extends Plugin {
 				this.updateNodePositions(view);
 			})
 		);
+
+		// Add settings tab
+		this.addSettingTab(new CustomNodeSizeSettingTab(this.app, this));
+	}
+
+	async loadSettings() {
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+	}
+
+	async saveSettings() {
+		await this.saveData(this.settings);
+		// Reload canvas view if it exists to apply new settings
+		const existingLeaf = this.app.workspace.getLeavesOfType('custom-node-canvas')[0];
+		if (existingLeaf) {
+			const view = existingLeaf.view as CustomCanvasView;
+			if (view) {
+				view.updateSettings(this.settings);
+			}
+		}
 	}
 
 	onunload() {
@@ -82,6 +113,33 @@ export default class CustomNodeSize extends Plugin {
 			});
 			this.app.workspace.revealLeaf(leaf);
 		}
+	}
+}
+
+class CustomNodeSizeSettingTab extends PluginSettingTab {
+	plugin: CustomNodeSize;
+
+	constructor(app: App, plugin: CustomNodeSize) {
+		super(app, plugin);
+		this.plugin = plugin;
+	}
+
+	display(): void {
+		const { containerEl } = this;
+
+		containerEl.empty();
+
+		containerEl.createEl('h2', { text: 'Custom Graph Settings' });
+
+		new Setting(containerEl)
+			.setName('Load only current directory')
+			.setDesc('When enabled, only nodes (markdown files) in the current directory will be loaded in the canvas view. The current directory is determined by the active file in the workspace.')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.loadOnlyCurrentDirectory)
+				.onChange(async (value) => {
+					this.plugin.settings.loadOnlyCurrentDirectory = value;
+					await this.plugin.saveSettings();
+				}));
 	}
 
 	private getGraphLeaf() {

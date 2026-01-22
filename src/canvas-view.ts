@@ -1,4 +1,5 @@
 import { ItemView, WorkspaceLeaf, TFile } from 'obsidian';
+import { CustomNodeSizeSettings } from 'src/main';
 
 export interface CanvasNode {
 	id: string;
@@ -25,9 +26,18 @@ export class CustomCanvasView extends ItemView {
 	private centerXInput: HTMLInputElement;
 	private centerYInput: HTMLInputElement;
 	private isUpdatingFromInputs: boolean = false;
+	private settings: CustomNodeSizeSettings;
 
-	constructor(leaf: WorkspaceLeaf) {
+	constructor(leaf: WorkspaceLeaf, settings: CustomNodeSizeSettings) {
 		super(leaf);
+		this.settings = settings;
+	}
+
+	updateSettings(settings: CustomNodeSizeSettings): void {
+		this.settings = settings;
+		// Reload nodes with new settings
+		this.loadNodes();
+		this.render();
 	}
 
 	getViewType(): string {
@@ -86,6 +96,16 @@ export class CustomCanvasView extends ItemView {
 			this.app.vault.on('modify', () => {
 				this.loadNodes();
 				this.render();
+			})
+		);
+
+		// Listen for active file changes (to reload nodes if directory filtering is enabled)
+		this.registerEvent(
+			this.app.workspace.on('file-open', () => {
+				if (this.settings.loadOnlyCurrentDirectory) {
+					this.loadNodes();
+					this.render();
+				}
 			})
 		);
 
@@ -158,7 +178,18 @@ export class CustomCanvasView extends ItemView {
 	private loadNodes(): void {
 		this.nodes.clear();
 		
-		const files = this.app.vault.getMarkdownFiles();
+		let files = this.app.vault.getMarkdownFiles();
+		
+		// Filter by current directory if setting is enabled
+		if (this.settings.loadOnlyCurrentDirectory) {
+			const currentDirectory = this.getCurrentDirectory();
+			if (currentDirectory) {
+				files = files.filter(file => {
+					const fileDir = file.parent?.path || '';
+					return fileDir === currentDirectory || fileDir.startsWith(currentDirectory + '/');
+				});
+			}
+		}
 		
 		for (const file of files) {
 			const cache = this.app.metadataCache.getFileCache(file);
@@ -181,6 +212,25 @@ export class CustomCanvasView extends ItemView {
 				this.nodes.set(file.path, node);
 			}
 		}
+	}
+
+	private getCurrentDirectory(): string | null {
+		// Get the active file from the workspace
+		const activeFile = this.app.workspace.getActiveFile();
+		if (activeFile && activeFile.parent) {
+			return activeFile.parent.path;
+		}
+		// If no active file, try to get directory from any open markdown file
+		const leaves = this.app.workspace.getLeavesOfType('markdown');
+		if (leaves.length > 0) {
+			const view = leaves[0].view;
+			// @ts-ignore
+			const file = view?.file;
+			if (file && file.parent) {
+				return file.parent.path;
+			}
+		}
+		return null;
 	}
 
 	private setupEventListeners(): void {

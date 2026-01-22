@@ -1,6 +1,6 @@
 # Custom Graph
 
-Inspired and forked based on [jackvonhouse/custom-node-size](https://github.com/jackvonhouse/custom-node-size).
+Forked from and inspired by [jackvonhouse/custom-node-size](https://github.com/jackvonhouse/custom-node-size).
 
 # Features
 
@@ -70,6 +70,20 @@ The **Custom Canvas View** is a dedicated view that:
 - **Touch gestures** are supported on mobile devices
 
 **Note on positions:** In the native graph view, setting `node_x` and `node_y` will attempt to "pin" the node to that position. In the Custom Canvas View, these coordinates are the definitive positions for your nodes.
+
+## Settings
+
+You can configure the plugin behavior through the settings:
+
+1. Open **Settings** → **Community plugins** → **Custom Node Size**
+2. Or use the command palette: `Ctrl+P` → "Open Settings" → navigate to the plugin
+
+### Load Only Current Directory
+
+When enabled, the Custom Canvas View will only load nodes (markdown files) from the current directory and its subdirectories. The current directory is determined by the active file in your workspace. This helps prevent loading all nodes throughout your vault, which can be useful for large vaults.
+
+- **Default**: Disabled (loads all nodes from the vault)
+- **When enabled**: Only nodes in the directory of the currently active file are loaded
 
 ## Node Size
 Each node has its own weight. This is the number of references to the note that makes the node larger. The plugin overwrites this with the value you set in the `node_size` property (numeric type).

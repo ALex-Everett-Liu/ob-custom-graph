@@ -5,6 +5,27 @@
 
 ### Added
 
+- **Directory Filtering Option**: Added setting to load only nodes from the current directory in Custom Canvas View
+  - New setting "Load only current directory" in plugin settings
+  - When enabled, only markdown files in the active file's directory (and subdirectories) are loaded
+  - Helps prevent loading all nodes throughout large vaults
+  - Automatically reloads nodes when the active file changes
+  - Setting persists across sessions
+
+### Changed
+
+- Custom Canvas View now accepts settings parameter for configuration
+- Settings tab added to plugin settings with toggle for directory filtering
+
+### Technical Details
+
+- Settings stored using Obsidian's `loadData()` and `saveData()` API
+- Current directory determined from the active file in workspace
+- Filtering applies to subdirectories recursively
+- Canvas view automatically updates when settings change
+
+### Added
+
 - **Zoom and Center Input Controls**: Added input boxes for adjusting zoom level and center coordinates
   - Zoom input field (range: 0.1 to 5.0) for precise zoom control
   - Center X and Center Y input fields for setting the world coordinate at the center of the canvas
