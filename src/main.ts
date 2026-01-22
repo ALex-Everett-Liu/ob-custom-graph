@@ -15,11 +15,25 @@ export default class CustomNodeSize extends Plugin {
 	private updateInterval: number | null = null;
 
 	async onload() {
+		console.log('[CustomNodeSize] Plugin onload() called');
 		// Load settings
 		await this.loadSettings();
+		console.log('[CustomNodeSize] Settings loaded:', this.settings);
 
 		// Register custom canvas view
-		this.registerView('custom-node-canvas', (leaf: WorkspaceLeaf) => new CustomCanvasView(leaf, this.settings));
+		// Pass a function that gets settings dynamically to ensure we always have the latest settings
+		this.registerView('custom-node-canvas', (leaf: WorkspaceLeaf) => {
+			console.log('[CustomNodeSize] Creating CustomCanvasView, current settings:', this.settings);
+			// Ensure settings are loaded before creating view
+			if (!this.settings) {
+				console.warn('[CustomNodeSize] WARNING: Settings not loaded, using defaults');
+				this.settings = Object.assign({}, DEFAULT_SETTINGS);
+			}
+			const view = new CustomCanvasView(leaf, this.settings, this);
+			console.log('[CustomNodeSize] CustomCanvasView created');
+			return view;
+		});
+		console.log('[CustomNodeSize] Custom canvas view registered');
 
 		// Add command to open custom canvas view
 		this.addCommand({
@@ -73,18 +87,49 @@ export default class CustomNodeSize extends Plugin {
 
 		// Add settings tab
 		this.addSettingTab(new CustomNodeSizeSettingTab(this.app, this));
+
+		// If canvas views already exist (plugin reload), reinitialize them
+		this.reinitializeExistingViews();
+	}
+
+	private reinitializeExistingViews(): void {
+		console.log('[CustomNodeSize] Checking for existing canvas views to reinitialize');
+		const existingLeaves = this.app.workspace.getLeavesOfType('custom-node-canvas');
+		console.log('[CustomNodeSize] Found', existingLeaves.length, 'existing canvas views');
+		for (const leaf of existingLeaves) {
+			const view = leaf.view as CustomCanvasView;
+			if (view) {
+				console.log('[CustomNodeSize] Reinitializing existing canvas view');
+				// Force view to refresh settings and reload
+				view.updateSettings(this.settings);
+				// Trigger a re-render by calling onOpen if it exists
+				// Note: onOpen might not be called again if view is already open
+				// So we manually trigger reload
+				setTimeout(() => {
+					if (view && view.contentEl) {
+						console.log('[CustomNodeSize] Triggering delayed reinitialization');
+						view.updateSettings(this.settings);
+					}
+				}, 100);
+			}
+		}
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		console.log('[CustomNodeSize] loadSettings() called');
+		const savedData = await this.loadData();
+		console.log('[CustomNodeSize] Saved data from storage:', savedData);
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, savedData);
+		console.log('[CustomNodeSize] Final settings:', this.settings);
 	}
 
 	async saveSettings() {
 		await this.saveData(this.settings);
 		// Reload canvas view if it exists to apply new settings
-		const existingLeaf = this.app.workspace.getLeavesOfType('custom-node-canvas')[0];
-		if (existingLeaf) {
-			const view = existingLeaf.view as CustomCanvasView;
+		const existingLeaves = this.app.workspace.getLeavesOfType('custom-node-canvas');
+		console.log('[CustomNodeSize] saveSettings() called, updating', existingLeaves.length, 'canvas views');
+		for (const leaf of existingLeaves) {
+			const view = leaf.view as CustomCanvasView;
 			if (view) {
 				view.updateSettings(this.settings);
 			}
@@ -99,47 +144,26 @@ export default class CustomNodeSize extends Plugin {
 	}
 
 	private async openCustomCanvasView(): Promise<void> {
+		console.log('[CustomNodeSize] openCustomCanvasView() called');
 		const existingLeaf = this.app.workspace.getLeavesOfType('custom-node-canvas')[0];
 		
 		if (existingLeaf) {
+			console.log('[CustomNodeSize] Existing canvas view found, revealing it');
 			// If view already exists, reveal it
 			this.app.workspace.revealLeaf(existingLeaf);
 		} else {
+			console.log('[CustomNodeSize] Creating new canvas view leaf');
 			// Create new leaf
 			const leaf = this.app.workspace.getRightLeaf(false);
+			console.log('[CustomNodeSize] Leaf created, setting view state');
 			await leaf.setViewState({
 				type: 'custom-node-canvas',
 				active: true
 			});
+			console.log('[CustomNodeSize] View state set, revealing leaf');
 			this.app.workspace.revealLeaf(leaf);
+			console.log('[CustomNodeSize] Leaf revealed');
 		}
-	}
-}
-
-class CustomNodeSizeSettingTab extends PluginSettingTab {
-	plugin: CustomNodeSize;
-
-	constructor(app: App, plugin: CustomNodeSize) {
-		super(app, plugin);
-		this.plugin = plugin;
-	}
-
-	display(): void {
-		const { containerEl } = this;
-
-		containerEl.empty();
-
-		containerEl.createEl('h2', { text: 'Custom Graph Settings' });
-
-		new Setting(containerEl)
-			.setName('Load only current directory')
-			.setDesc('When enabled, only nodes (markdown files) in the current directory will be loaded in the canvas view. The current directory is determined by the active file in the workspace.')
-			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.loadOnlyCurrentDirectory)
-				.onChange(async (value) => {
-					this.plugin.settings.loadOnlyCurrentDirectory = value;
-					await this.plugin.saveSettings();
-				}));
 	}
 
 	private getGraphLeaf() {
@@ -216,5 +240,32 @@ class CustomNodeSizeSettingTab extends PluginSettingTab {
 				console.debug('Could not access force simulation:', e);
 			}
 		}
+	}
+}
+
+class CustomNodeSizeSettingTab extends PluginSettingTab {
+	plugin: CustomNodeSize;
+
+	constructor(app: App, plugin: CustomNodeSize) {
+		super(app, plugin);
+		this.plugin = plugin;
+	}
+
+	display(): void {
+		const { containerEl } = this;
+
+		containerEl.empty();
+
+		containerEl.createEl('h2', { text: 'Custom Graph Settings' });
+
+		new Setting(containerEl)
+			.setName('Load only current directory')
+			.setDesc('When enabled, only nodes (markdown files) in the current directory will be loaded in the canvas view. The current directory is determined by the active file in the workspace.')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.loadOnlyCurrentDirectory)
+				.onChange(async (value) => {
+					this.plugin.settings.loadOnlyCurrentDirectory = value;
+					await this.plugin.saveSettings();
+				}));
 	}
 }

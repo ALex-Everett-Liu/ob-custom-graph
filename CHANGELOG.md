@@ -23,6 +23,9 @@
 - Current directory determined from the active file in workspace
 - Filtering applies to subdirectories recursively
 - Canvas view automatically updates when settings change
+- Canvas sizing uses multiple fallback strategies: bounding rect → container → viewport → default
+- Double RAF pattern ensures DOM layout is complete before canvas operations
+- View stores plugin reference for dynamic settings access to handle plugin reloads
 
 ### Added
 
@@ -42,6 +45,14 @@
 
 - Fixed initialization error where inputs were accessed before canvas was ready
 - Added safety checks to prevent errors when canvas dimensions are not yet available
+- **CRITICAL**: Fixed blank canvas issue on first open - canvas was rendering with 0x0 size before layout was complete
+  - Enhanced `resizeCanvas()` to handle zero-size cases with fallback to container/viewport dimensions
+  - Delayed initial render using double `requestAnimationFrame` to ensure view is fully laid out
+  - Added size validation before rendering with retry mechanism
+- Fixed plugin reload issue - canvas view now properly reinitializes when plugin is reloaded
+  - View now stores reference to plugin instance for dynamic settings access
+  - Settings are refreshed from plugin on `onOpen()` to ensure latest values
+  - Existing views are reinitialized when plugin reloads
 
 ### Technical Details
 
