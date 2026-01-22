@@ -6,3 +6,56 @@ available in the app when your plugin is enabled.
 If your plugin does not need CSS, delete this file.
 
 */
+
+.canvas-controls-panel {
+	display: flex;
+	gap: 15px;
+	padding: 10px;
+	background-color: var(--background-secondary);
+	border-bottom: 1px solid var(--background-modifier-border);
+	align-items: center;
+	flex-wrap: wrap;
+	z-index: 10;
+}
+
+.canvas-controls-panel .control-group {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.canvas-controls-panel .control-label {
+	font-size: 12px;
+	color: var(--text-muted);
+	font-weight: 500;
+	min-width: fit-content;
+}
+
+.canvas-controls-panel .control-input {
+	width: 100px;
+	padding: 4px 8px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	background-color: var(--background-primary);
+	color: var(--text-normal);
+	font-size: 12px;
+}
+
+.canvas-controls-panel .control-input:focus {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: -1px;
+	border-color: var(--interactive-accent);
+}
+
+.canvas-wrapper {
+	flex: 1;
+	position: relative;
+	overflow: hidden;
+	min-height: 0;
+}
+
+.canvas-view-container {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+}

@@ -20,6 +20,11 @@ export class CustomCanvasView extends ItemView {
 	private isPanning: boolean = false;
 	private lastPanPoint: { x: number; y: number } = { x: 0, y: 0 };
 	private zoom: number = 1.0;
+	private controlsPanel: HTMLElement;
+	private zoomInput: HTMLInputElement;
+	private centerXInput: HTMLInputElement;
+	private centerYInput: HTMLInputElement;
+	private isUpdatingFromInputs: boolean = false;
 
 	constructor(leaf: WorkspaceLeaf) {
 		super(leaf);
@@ -40,9 +45,16 @@ export class CustomCanvasView extends ItemView {
 	async onOpen(): Promise<void> {
 		const container = this.contentEl;
 		container.empty();
+		container.addClass('canvas-view-container');
 
+		// Create controls panel
+		this.createControlsPanel(container);
+
+		// Create canvas wrapper
+		const canvasWrapper = container.createDiv('canvas-wrapper');
+		
 		// Create canvas
-		this.canvas = container.createEl('canvas', {
+		this.canvas = canvasWrapper.createEl('canvas', {
 			attr: {
 				style: 'width: 100%; height: 100%; display: block; cursor: grab;'
 			}
@@ -79,10 +91,62 @@ export class CustomCanvasView extends ItemView {
 
 		// Initial render
 		this.render();
+		this.updateInputsFromState();
 	}
 
 	async onClose(): Promise<void> {
 		// Cleanup if needed
+	}
+
+	private createControlsPanel(container: HTMLElement): void {
+		this.controlsPanel = container.createDiv('canvas-controls-panel');
+		
+		// Zoom control
+		const zoomGroup = this.controlsPanel.createDiv('control-group');
+		zoomGroup.createSpan({ text: 'Zoom:', cls: 'control-label' });
+		this.zoomInput = zoomGroup.createEl('input', {
+			type: 'number',
+			attr: {
+				step: '0.1',
+				min: '0.1',
+				max: '5',
+				value: this.zoom.toFixed(2)
+			},
+			cls: 'control-input'
+		});
+
+		// Center X control
+		const centerXGroup = this.controlsPanel.createDiv('control-group');
+		centerXGroup.createSpan({ text: 'Center X:', cls: 'control-label' });
+		this.centerXInput = centerXGroup.createEl('input', {
+			type: 'number',
+			attr: {
+				step: '1',
+				value: '0'
+			},
+			cls: 'control-input'
+		});
+
+		// Center Y control
+		const centerYGroup = this.controlsPanel.createDiv('control-group');
+		centerYGroup.createSpan({ text: 'Center Y:', cls: 'control-label' });
+		this.centerYInput = centerYGroup.createEl('input', {
+			type: 'number',
+			attr: {
+				step: '1',
+				value: '0'
+			},
+			cls: 'control-input'
+		});
+
+		// Setup input event listeners
+		this.zoomInput.addEventListener('change', () => this.updateZoomFromInput());
+		this.zoomInput.addEventListener('input', () => this.updateZoomFromInput());
+		this.centerXInput.addEventListener('change', () => this.updateCenterFromInputs());
+		this.centerYInput.addEventListener('change', () => this.updateCenterFromInputs());
+
+		// Update initial values
+		this.updateInputsFromState();
 	}
 
 	private resizeCanvas(): void {
@@ -137,6 +201,7 @@ export class CustomCanvasView extends ItemView {
 		// Window resize
 		window.addEventListener('resize', () => {
 			this.resizeCanvas();
+			this.updateInputsFromState();
 			this.render();
 		});
 	}
@@ -169,6 +234,73 @@ export class CustomCanvasView extends ItemView {
 			x: screenX / this.zoom - this.panOffset.x,
 			y: screenY / this.zoom - this.panOffset.y
 		};
+	}
+
+	private getCenterWorldCoordinate(): { x: number; y: number } {
+		const width = this.canvas.width / window.devicePixelRatio;
+		const height = this.canvas.height / window.devicePixelRatio;
+		return this.screenToWorld(width / 2, height / 2);
+	}
+
+	private setCenterWorldCoordinate(worldX: number, worldY: number): void {
+		const width = this.canvas.width / window.devicePixelRatio;
+		const height = this.canvas.height / window.devicePixelRatio;
+		const centerScreenX = width / 2;
+		const centerScreenY = height / 2;
+		
+		// Calculate panOffset so that (worldX, worldY) appears at screen center
+		this.panOffset.x = centerScreenX / this.zoom - worldX;
+		this.panOffset.y = centerScreenY / this.zoom - worldY;
+	}
+
+	private updateZoomFromInput(): void {
+		if (this.isUpdatingFromInputs) return;
+		
+		const newZoom = parseFloat(this.zoomInput.value);
+		if (isNaN(newZoom)) return;
+		
+		const clampedZoom = Math.max(0.1, Math.min(5, newZoom));
+		
+		// Get current center before zoom change
+		const centerBefore = this.getCenterWorldCoordinate();
+		
+		// Update zoom
+		this.zoom = clampedZoom;
+		
+		// Adjust pan to keep the same center point
+		this.setCenterWorldCoordinate(centerBefore.x, centerBefore.y);
+		
+		// Update input to reflect clamped value
+		this.isUpdatingFromInputs = true;
+		this.zoomInput.value = clampedZoom.toFixed(2);
+		this.isUpdatingFromInputs = false;
+		
+		this.render();
+	}
+
+	private updateCenterFromInputs(): void {
+		if (this.isUpdatingFromInputs) return;
+		
+		const centerX = parseFloat(this.centerXInput.value);
+		const centerY = parseFloat(this.centerYInput.value);
+		
+		if (isNaN(centerX) || isNaN(centerY)) return;
+		
+		this.setCenterWorldCoordinate(centerX, centerY);
+		this.render();
+	}
+
+	private updateInputsFromState(): void {
+		if (this.isUpdatingFromInputs || !this.zoomInput) return;
+		
+		this.isUpdatingFromInputs = true;
+		
+		const center = this.getCenterWorldCoordinate();
+		this.zoomInput.value = this.zoom.toFixed(2);
+		this.centerXInput.value = Math.round(center.x).toString();
+		this.centerYInput.value = Math.round(center.y).toString();
+		
+		this.isUpdatingFromInputs = false;
 	}
 
 	private getNodeAt(x: number, y: number): CanvasNode | null {
@@ -230,6 +362,7 @@ export class CustomCanvasView extends ItemView {
 			this.panOffset.x += deltaX / this.zoom;
 			this.panOffset.y += deltaY / this.zoom;
 			this.lastPanPoint = pos;
+			this.updateInputsFromState();
 			this.render();
 		}
 	}
@@ -276,6 +409,7 @@ export class CustomCanvasView extends ItemView {
 		this.panOffset.x += worldPos.x - newWorldPos.x;
 		this.panOffset.y += worldPos.y - newWorldPos.y;
 
+		this.updateInputsFromState();
 		this.render();
 	}
 
@@ -317,6 +451,7 @@ export class CustomCanvasView extends ItemView {
 				this.panOffset.x += deltaX / this.zoom;
 				this.panOffset.y += deltaY / this.zoom;
 				this.lastPanPoint = pos;
+				this.updateInputsFromState();
 				this.render();
 			}
 		}
